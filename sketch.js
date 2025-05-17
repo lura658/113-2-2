@@ -1,20 +1,16 @@
 let video;
 let poseNet;
 let poses = [];
-
-let leftHandX = 0;
-let rightHandX = 0;
-
-let ball;
+let leftHandY = 0;
+let rightHandY = 0;
+let gameState = "start";
+let questionIndex = 0;
 let score = 0;
-let questionSet = [
-  { q: "VR 是什麼的縮寫？", a: "Virtual Reality" },
-  { q: "AR 是什麼的縮寫？", a: "Augmented Reality" },
-  { q: "MOOCs 是什麼？", a: "Massive Open Online Courses" }
+let questions = [
+  { question: "什麼是教育科技？", correct: "左手" },
+  { question: "教學設計是屬於？", correct: "右手" },
+  { question: "教育APP開發與哪項有關？", correct: "左手" },
 ];
-let currentQuestion;
-let gameState = "intro"; // intro, playing, question
-let answerInput;
 
 function setup() {
   createCanvas(640, 480);
@@ -23,124 +19,69 @@ function setup() {
   video.hide();
 
   poseNet = ml5.poseNet(video, modelReady);
-  poseNet.on("pose", gotPoses);
-
-  ball = new Ball();
-  currentQuestion = random(questionSet);
-
-  answerInput = createInput("");
-  answerInput.position(width / 2 - 100, height / 2);
-  answerInput.size(200);
-  answerInput.hide();
-  answerInput.input(() => {
-    if (answerInput.value().toLowerCase() === currentQuestion.a.toLowerCase()) {
-      score += 5;
-      answerInput.hide();
-      currentQuestion = random(questionSet);
-      gameState = "playing";
-      ball.reset();
-    }
+  poseNet.on("pose", function (results) {
+    poses = results;
   });
+  textAlign(CENTER, CENTER);
+  textSize(24);
 }
 
 function modelReady() {
-  console.log("PoseNet ready!");
-}
-
-function gotPoses(results) {
-  poses = results;
-
-  if (poses.length > 0) {
-    let pose = poses[0].pose;
-
-    if (pose.leftWrist.confidence > 0.2) {
-      leftHandX = pose.leftWrist.x;
-    }
-    if (pose.rightWrist.confidence > 0.2) {
-      rightHandX = pose.rightWrist.x;
-    }
-  }
+  console.log("PoseNet ready");
 }
 
 function draw() {
   image(video, 0, 0, width, height);
 
-  if (gameState === "intro") {
-    fill(0, 150);
-    rect(0, 0, width, height);
+  if (poses.length > 0) {
+    let pose = poses[0].pose;
+    if (pose.leftWrist && pose.rightWrist) {
+      leftHandY = pose.leftWrist.y;
+      rightHandY = pose.rightWrist.y;
+
+      // Draw hands
+      fill(255, 0, 0);
+      ellipse(pose.leftWrist.x, pose.leftWrist.y, 20);
+      fill(0, 0, 255);
+      ellipse(pose.rightWrist.x, pose.rightWrist.y, 20);
+
+      // Game logic
+      if (gameState === "question") {
+        let q = questions[questionIndex];
+        text(q.question, width / 2, 40);
+        text("舉左手表示「左手」，舉右手表示「右手」", width / 2, 80);
+
+        if (leftHandY < 200) {
+          checkAnswer("左手");
+        } else if (rightHandY < 200) {
+          checkAnswer("右手");
+        }
+      }
+    }
+  }
+
+  if (gameState === "start") {
     fill(255);
-    textSize(32);
-    textAlign(CENTER, CENTER);
-    text("教育科技知識球\n請用雙手接球", width / 2, height / 2 - 50);
-    textSize(16);
-    text("按任意鍵開始", width / 2, height / 2 + 50);
-  } else if (gameState === "playing") {
-    drawHands();
-    ball.update();
-    ball.display();
-    checkCatch();
-
+    text("舉起任一隻手開始遊戲", width / 2, height / 2);
+    if (poses.length > 0) {
+      let pose = poses[0].pose;
+      if (pose.leftWrist.y < 200 || pose.rightWrist.y < 200) {
+        gameState = "question";
+      }
+    }
+  } else if (gameState === "end") {
     fill(255);
-    textSize(20);
-    textAlign(LEFT, TOP);
-    text("分數: " + score, 10, 10);
-  } else if (gameState === "question") {
-    fill(0, 180);
-    rect(0, 0, width, height);
-    fill(255);
-    textSize(20);
-    textAlign(CENTER, CENTER);
-    text(currentQuestion.q, width / 2, height / 2 - 40);
-    answerInput.show();
+    text("遊戲結束！你的得分是：" + score, width / 2, height / 2);
   }
 }
 
-function drawHands() {
-  fill(0, 255, 0);
-  noStroke();
-  ellipse(leftHandX, height - 20, 80, 20);
-  ellipse(rightHandX, height - 20, 80, 20);
-}
-
-function checkCatch() {
-  if (
-    dist(ball.x, ball.y, leftHandX, height - 20) < 40 ||
-    dist(ball.x, ball.y, rightHandX, height - 20) < 40
-  ) {
-    gameState = "question";
-    answerInput.value("");
-  } else if (ball.y > height) {
-    ball.reset();
+function checkAnswer(ans) {
+  let correct = questions[questionIndex].correct;
+  if (ans === correct) {
+    score++;
   }
-}
-
-class Ball {
-  constructor() {
-    this.reset();
-  }
-
-  reset() {
-    this.x = random(100, width - 100);
-    this.y = 0;
-    this.speed = 4;
-  }
-
-  update() {
-    this.y += this.speed;
-  }
-
-  display() {
-    fill(255, 204, 0);
-    ellipse(this.x, this.y, 30, 30);
-    fill(0);
-    textAlign(CENTER, CENTER);
-    textSize(12);
-    text("知識球", this.x, this.y);
-  }
-}
-
-function keyPressed() {
-  if (gameState === "intro") {
-    gameState = "playing";
+  questionIndex++;
+  if (questionIndex >= questions.length) {
+    gameState = "end";
   }
 }
